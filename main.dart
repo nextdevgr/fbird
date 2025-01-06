@@ -22,14 +22,14 @@ class _HomeState extends State<Home> {
   double initialPos = 0;
   double height = 0;
   double time = 0;
-  double gravity = -9.8; // Αυξημένη βαρύτητα για ρεαλισμό
-  double velocity = 4.0; // Μειωμένη ταχύτητα για ομαλότερο άλμα
+  double gravity = -6; // Βαρύτητα
+  double velocity = 2; // Ταχύτητα άλματος
   bool gameHasStarted = false;
   Timer? gameTimer;
-
+  int score = 0; // Σκορ
   List<double> pipeX = [2, 3.5, 5];
-  double pipeWidth = 0.2; //
-  double gap = 0.3; //
+  double pipeWidth = 0.2;
+  double gap = 0.3;
   List<List<double>> pipeHeights = [
     [0.4, 0.6],
     [0.3, 0.5],
@@ -45,31 +45,100 @@ class _HomeState extends State<Home> {
 
   void startGame() {
     gameHasStarted = true;
-    gameTimer = Timer.periodic(Duration(milliseconds: 30), (timer) { // πιο συχνό update για smooth κίνηση
-      time += 0.03; // μικρότερα διαστήματα για ρεαλισμό
+    score = 0; // Επαναφορά σκορ
+    time = 0; // Επαναφορά χρόνου
+
+    gameTimer = Timer.periodic(Duration(milliseconds: 30), (timer) {
+      time += 0.03;
       height = gravity * time * time + velocity * time;
 
-      setState(() {
-        birdY = initialPos - height;
+      // Ελέγχουμε αν η κατάσταση της οθόνης είναι ακόμα ενεργή
+      if (mounted) {
+        setState(() {
+          birdY = initialPos - height;
 
-        for (int i = 0; i < pipeX.length; i++) {
-          pipeX[i] -= 0.05;
+          for (int i = 0; i < pipeX.length; i++) {
+            pipeX[i] -= 0.05;
 
-          if (pipeX[i] < -1.5) {
-            pipeX[i] += 3.5;
-            pipeHeights[i] = _generatePipeHeights();
+            if (pipeX[i] < -1.5) {
+              pipeX[i] += 3.5;
+              pipeHeights[i] = _generatePipeHeights();
+            }
           }
-        }
 
-        if (birdY < -1) {
-          birdY = -1;
-        }
-      });
-
-      if (birdY > 1) {
-        timer.cancel();
-        gameHasStarted = false;
+          if (birdY > 1 || birdY < -1 || _checkCollision()) {
+            gameOver(timer);
+          }
+        });
       }
+
+      if (gameHasStarted) {
+        score += 1; // Αύξηση σκορ
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    gameTimer?.cancel(); // Ακυρώνουμε τον gameTimer για να αποτρέψουμε την εκτέλεση μετά την αποδέσμευση
+    super.dispose();
+  }
+
+
+
+  bool _checkCollision() {
+    for (int i = 0; i < pipeX.length; i++) {
+      // Έλεγχος αν το πουλί είναι εντός των οριζόντιων ορίων ενός σωλήνα
+      if (pipeX[i] > -0.1 && pipeX[i] < 0.1) {
+        double pipeTop = 1 - pipeHeights[i][1]; // Κάτω όριο του πάνω σωλήνα
+        double pipeBottom = -1 + pipeHeights[i][0]; // Πάνω όριο του κάτω σωλήνα
+
+        // Έλεγχος αν το πουλί είναι εκτός του κατακόρυφου κενου μεταξύ των σωλήνων
+        if (birdY < pipeBottom || birdY > pipeTop) {
+          return true; // Βρέθηκε σύγκρουση
+        }
+      }
+    }
+    return false; // Δεν βρέθηκε σύγκρουση
+  }
+
+  void gameOver(Timer timer) {
+    timer.cancel();
+    gameHasStarted = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Game Over'),
+          content: Text('Your Score: ${score ~/ 30} seconds'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                resetGame();
+              },
+              child: Text('Play Again'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void resetGame() {
+    setState(() {
+      birdY = 0;
+      initialPos = 0;
+      height = 0;
+      time = 0;
+      pipeX = [2, 3.5, 5];
+      pipeHeights = [
+        [0.4, 0.6],
+        [0.3, 0.5],
+        [0.5, 0.4],
+      ];
     });
   }
 
@@ -77,17 +146,11 @@ class _HomeState extends State<Home> {
     double minHeight = 0.2;
     double maxHeight = 0.6;
     double bottomPipeHeight =
-        minHeight + (maxHeight - minHeight) * (new DateTime.now().millisecondsSinceEpoch % 1000) / 1000;
+        minHeight + (maxHeight - minHeight) * (DateTime.now().millisecondsSinceEpoch % 1000) / 1000;
 
     double topPipeHeight = 1.0 - bottomPipeHeight - gap;
 
     return [bottomPipeHeight, topPipeHeight];
-  }
-
-  @override
-  void dispose() {
-    gameTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -106,7 +169,7 @@ class _HomeState extends State<Home> {
             Expanded(
               flex: 3,
               child: Container(
-                color: Colors.blue,
+                color: Colors.white,
                 child: Stack(
                   children: [
                     for (int i = 0; i < pipeX.length; i++) ...[
@@ -126,12 +189,23 @@ class _HomeState extends State<Home> {
                     AnimatedContainer(
                       alignment: Alignment(0, birdY),
                       duration: Duration(milliseconds: 0),
-                      child: Container(
-                        height: 50,
-                        width: 50,
-                        color: Colors.yellow,
+                      child: Image.asset(
+                        'images/bird.gif',
+                        height: 100,
+                        width: 100,
                       ),
                     ),
+                    if (!gameHasStarted)
+                      Center(
+                        child: Text(
+                          'TAP TO PLAY',
+                          style: TextStyle(
+                            fontSize: 24,
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -173,11 +247,6 @@ class Pipe extends StatelessWidget {
               offset: Offset(2, 2),
             ),
           ],
-          gradient: LinearGradient(
-            colors: [Colors.green.shade700, Colors.green.shade400],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
         ),
       ),
     );
